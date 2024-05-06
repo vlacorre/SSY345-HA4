@@ -26,7 +26,6 @@ set(0, 'DefaultLegendLocation', 'best');
 
 clc;  clear all;  close all;
 
-% Delete old pictures
 delete('Images/*.eps');
 
 % addpath('HA1');
@@ -34,13 +33,14 @@ delete('Images/*.eps');
 % addpath('HA3');
 addpath('HA4');
 
-rng(2); % Set random seed
+% rng(2); % Set random seed
 
 scenario1 = true;
 scenario2 = true;
 scenario3 = true;
 
 if scenario1
+
 tol = 0.5;
 
 % Number of time steps;
@@ -61,10 +61,10 @@ Q = G*diag([sigV^2 sigOmega^2])*G';
 motionModel = @coordinatedTurnMotion;
 
 % Random sensor position sequence
-S = [-5 10;-10 15];
-S = repmat(S, 1, N);
+S = zeros(2,N);
+
 % Measurement noise covariance
-R = diag([10 5*pi/180].^2);
+R = diag([10 5*pi/180].^2).*1000;
 
 % Measurement model
 measModel = @rangeBearingMeasurements;
@@ -74,7 +74,7 @@ genSigmaPoints = @sigmaPoints;
 
 
 % Sample time
-T = 0.1;
+T = rand;
 
 % generate state sequence
 X = genNonLinearStateSequence(x_0, P_0, motionModel, T, Q, N);
@@ -86,17 +86,23 @@ Y = genNonLinearMeasurementSequence(X, S, measModel, R);
 [xEs, PEs, xEf, PEf, xEp, PEp] = ...
     nonLinRTSsmoother(Y, x_0, P_0, motionModel, T, Q, S, measModel, R, genSigmaPoints, 'EKF');
 
+% % Range
+% rng = norm(x(1:2)-s);
+% % Bearing
+% ber = atan2(x(2)-s(2),x(1)-s(1));
+meas_x = Y(1,:);
+
 % plot
 figure;
 hold on;
 plot(X(1,:),X(2,:),'b');
 plot(Y(1,:),Y(2,:),'r*');
 plot(S(:,1),S(:,1),'ko');
-% plot(xEs(1,:),xEs(2,:),'g');
-% plot(xEf(1,:),xEf(2,:),'k');
-% plot(xEp(1,:),xEp(2,:),'m');
+plot(xEs(1,:),xEs(2,:),'g');
+plot(xEf(1,:),xEf(2,:),'k');
+plot(xEp(1,:),xEp(2,:),'m');
 hold off;
-legend('True','Measurements','Smoothed','Filtered','Predicted');
+legend('True','Measurements', 'sensors position' , 'Smoothed','Filtered','Predicted');
 xlabel('X-position');
 ylabel('Y-position');
 grid on;
