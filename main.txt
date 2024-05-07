@@ -85,16 +85,18 @@ Y = genNonLinearMeasurementSequence(X, S, measModel, R);
 % Kalman filter
 [xEs, PEs, xEf, PEf, xEp, PEp] = ...
     nonLinRTSsmoother(Y, x_0, P_0, motionModel, T, Q, S, measModel, R, genSigmaPoints, 'EKF');
-sensorPositions_x = zeros(N, 1);
-sensorPositions_y = zeros(N, 1);
-for i=1:N
-    [sensorPositions_x(i), sensorPositions_y(i)] = getPosFromMeasurement(Y(1,i), Y(2,i), [0 0], [0 0]);
-end
+
+% % Range
+% rng = norm(x(1:2)-s);
+% % Bearing
+% ber = atan2(x(2)-s(2),x(1)-s(1));
+meas_x = Y(1,:);
+
 % plot
 figure;
 hold on;
 plot(X(1,:),X(2,:),'b');
-plot(sensorPositions_x,sensorPositions_y,'r*');
+plot(Y(1,:),Y(2,:),'r*');
 plot(S(:,1),S(:,1),'ko');
 plot(xEs(1,:),xEs(2,:),'g');
 plot(xEf(1,:),xEf(2,:),'k');
