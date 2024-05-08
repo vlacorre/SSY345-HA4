@@ -1,217 +1,322 @@
+set(0, 'DefaultAxesXGrid', 'on');  % Turn on grid for x-axis
+set(0, 'DefaultAxesYGrid', 'on');  % Turn on grid for y-axis
 
-% Test PF filter and compare with Kalman filter output. Generate 2D state sequence (CV, pos and vel) and 1D measurement sequence (pos) and compare
-% outputs with Kalman filter.
+set(0, 'DefaultLegendFontSizeMode', 'manual');
+set(0, 'DefaultLegendFontSize', 14);
+set(0, 'DefaultLegendLocation', 'best');
+
+
+set(0, 'DefaultAxesFontSize', 14);  % Increase the default font size for axes
+set(0, 'DefaultTextFontSize', 14);  % Increase the default font size for text
+
+
+set(0, 'DefaultAxesFontSize', 30);  % Increase the default font size for axes
+set(0, 'DefaultLineLineWidth', 3);  % Increase the default line width
+set(0, 'DefaultTextFontSize', 26);  % Increase the default font size for text
+set(0, 'DefaultAxesTitleFontSizeMultiplier', 1);  % Increase the default font size for axes titles
+set(0, 'DefaultAxesLabelFontSizeMultiplier', 1.1);  % Increase the default font size for axes labels
+set(0, 'DefaultFigurePosition', [0, -1500, 1900, 1500]); % [x, y, width, height]
+set(0, 'DefaultLineMarkersize', 10);
+
+% Increase legend box
+set(0, 'DefaultLegendBox', 'on');
+set(0, 'DefaultLegendFontSizeMode', 'manual');
+set(0, 'DefaultLegendFontSize', 20);
+set(0, 'DefaultLegendLocation', 'best');
+
+clc;  clear all;  close all;
+
+delete('Images/*.eps');
+
+% addpath('HA1');
+% addpath('HA2');
+% addpath('HA3');
 addpath('HA4');
 
-% Set prior
-sigma = 2;
-x_0 = [0 1]';
-P_0 = [sigma^2 0; ...
-       0 sigma^2];
-n = size(x_0,1);
+% rng(2); % Set random seed
 
-% Number of time steps
-K = 20;
+scenario1 = true;
+scenario2 = true;
+scenario3 = true;
 
-% Models
-A = [1 0.1; 0 1];
-Q = [0 0; 0 0.5];
-H = [1 0];
-R = 1;
+if scenario1
 
-m = 1;
+tol = 0.5;
 
-% Generate state and measurement sequences
-X = zeros(n,K);
-Y = zeros(m,K);
+% Number of time steps;
+N = 100;
 
-q = mvnrnd([0 0], Q, K)';
-r = mvnrnd(zeros(1,m), R, K)';
-x_kmin1 = x_0;
-for k = 1:K
-    xk = f(x_kmin1,A) + q(:,k);
-    X(:,k) = xk;
-    x_kmin1 = xk;
+% Define prior
+x_0     = [0 0 10 0 0]';
+n       = length(x_0);
+P_0     = diag([1 1 1 1*pi/180 1*pi/180].^2);
 
-    Y(:,k) = h(xk, H) + r(:,k);
-end
+% Covariance
+sigV = 1;
+sigOmega = 1*pi/180;
+G = [zeros(2,2); 1 0; 0 0; 0 1];
+Q = G*diag([sigV^2 sigOmega^2])*G';
 
-% Run Kalman filter
-[Xf, Pf] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
+% Motion model
+motionModel = @coordinatedTurnMotion;
 
-% Run PF filter with and without resampling
-N = 20000;
-proc_f = @(X_kmin1) (f(X_kmin1, A));
-meas_h = @(X_k) (h(X_k, H));
-plotFunc = @(k, Xk, Xkmin1, Wk, j) (0); % Define dummy function that does nothing
+% Random sensor position sequence
+S = zeros(2,N);
 
-[xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, ...
-                              N, false, plotFunc);
+% Measurement noise covariance
+R = diag([10 5*pi/180].^2).*1000;
 
-% [xfpr, Pfpr, Xpr, Wpr] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, ...
-%                                   N, right, plotFunc);
+% Measurement model
+measModel = @rangeBearingMeasurements;
+
+% function handle for generating sigma points
+genSigmaPoints = @sigmaPoints;
 
 
-% plot(X(2,:));
-% plot(X(1,:));
-plot(X(1,:), X(2,:));
+% Sample time
+T = rand;
+
+% generate state sequence
+X = genNonLinearStateSequence(x_0, P_0, motionModel, T, Q, N);
+
+% generate measurements
+Y = genNonLinearMeasurementSequence(X, S, measModel, R);
+
+% Kalman filter
+[xEs, PEs, xEf, PEf, xEp, PEp] = ...
+    nonLinRTSsmoother(Y, x_0, P_0, motionModel, T, Q, S, measModel, R, genSigmaPoints, 'UKF');
+
+% plot
+figure;
 hold on;
-% plot(Xf(2,:), 'c');
-% plot(Xf(1,:), 'c');
-plot(Xf(1,:), Xf(2,:), 'c');
-% plot(xfp(2,:), 'r');
-% plot(xfpr(2,:), 'g');
-% plot(xfp(1,:), 'r');
-% plot(xfpr(1,:), 'g');
-plot(xfp(1,:), xfp(2,:), 'r');
-% plot(xfpr(1,:), xfpr(2,:),'g');
+plot(X(1,:),X(2,:),'b');
+plot(S(:,1),S(:,1),'ko');
+plot(xEs(1,:),xEs(2,:),'g');
+plot(xEf(1,:),xEf(2,:),'k');
+plot(xEp(1,:),xEp(2,:),'m');
 hold off;
-legend('True state', 'KF', 'PF');
+legend('True', 'sensors position' , 'Smoothed','Filtered','Predicted');
+xlabel('X-position');
+ylabel('Y-position');
+grid on;
 
-% Compute means and covariances for each particle filter output
 
-for k = 1:K
-    mean_nRS = Xp(:,:,k) * Wp(:,k);
-    cov_nRS = (Xp(:,:,k) - mean_nRS) * ((Xp(:,:,k) - mean_nRS)' .* Wp(:,k));
-    % Compare with the provided means and covariances
-    assert(norm(mean_nRS-xfp(:,k)) < 0.00001, ...
-        'The output mean from PF without RS is not consistent with the output particles.');
-    assert(norm(cov_nRS-Pfp(:,:,k)) < 0.00001, ...
-        'The output covariance from PF without RS is not consistent with the output particles.');
+end % scenario1
 
-    % mean_RS = Xpr(:,:,k) * Wpr(:,k);
-    % cov_RS = (Xpr(:,:,k) - mean_RS) * ((Xpr(:,:,k) - mean_RS)' .* Wpr(:,k));
-    % Compare with the provided means and covariances
-    % assert(norm(mean_RS-xfpr(:,k)) < 0.00001, ...
-    %     'The output mean from PF with RS is not consistent with the output particles.');
-    % assert(norm(cov_RS-Pfpr(:,:,k)) < 0.00001, ...
-    %     'The output covariance from PF with RS is not consistent with the output particles.');
 
-    % Compare with Kalman filter
-    assert(norm(Xf(:,k)-xfp(:,k)) < 0.5, ...
-        'The mean from PF WITHOUT resampling deviates too much from KF filter mean.');
-    assert(norm(Pf(:,:,k)-Pfp(:,:,k)) < 1, ...
-        'The covariance from PF WITHOUT resampling deviates too much from KF filter covariance.');
 
-    % assert(norm(Xf(:,k)-xfpr(:,k)) < 0.5, ...
-    %     'The mean from PF WITH resampling deviates too much from KF filter mean.');
-    % assert(norm(Pf(:,:,k)-Pfpr(:,:,k)) < 1, ...
-    %     'The covariance from PF WITH resampling deviates too much from KF filter covariance.');
-
-end
+%% Export the source code as .txt file.
+filename = fullfile('main.m');
+copyfile(filename,'main.txt','f');
 
 
 
 
-function X_k = f(X_kmin1, A)
-%
-% X_kmin1:  [n x N] N states vectors at time k-1
-% A:        [n x n] Matrix such that x_k = A*x_k-1 + q_k-1
-    X_k = A*X_kmin1;
-end
 
-function H_k = h(X_k, H)
-%
-% X_k:  [n x N] N states
-% H:    [m x n] Matrix such that y = H*x + r_k
-    H_k = H*X_k;
-end
+%% TO REMOVE
 
-function [X, P] = kalmanFilter(Y, x_0, P_0, A, Q, H, R)
-%KALMANFILTER Filters measurements sequense Y using a Kalman filter.
-%
-%Input:
-%   Y           [m x N] Measurement sequence
-%   x_0         [n x 1] Prior mean
-%   P_0         [n x n] Prior covariance
-%   A           [n x n] State transition matrix
-%   Q           [n x n] Process noise covariance
-%   H           [n x n] Measruement model matrix
-%   R           [n x n] Measurement noise covariance
-%
-%Output:
-%   x           [n x N] Estimated state vector sequence
-%   P           [n x n x N] Filter error convariance
-%
 
-    % Parameters
-    N = size(Y,2);
+function [SP,W] = sigmaPoints(x, P, type)
+    % SIGMAPOINTS computes sigma points, either using unscented transform or
+    % using cubature.
+    %
+    %Input:
+    %   x           [n x 1] Prior mean
+    %   P           [n x n] Prior covariance
+    %
+    %Output:
+    %   SP          [n x 2n+1] matrix with sigma points
+    %   W           [1 x 2n+1] vector with sigma point weights
+    %
 
-    n = length(x_0);
-    m = size(Y,1);
+        switch type
+            case 'UKF'
 
-    % Data allocation
-    X = zeros(n,N);
-    P = zeros(n,n,N);
+                % Dimension of state
+                n = length(x);
 
-    % Filter
-    for k = 1:N
+                % Allocate memory
+                SP = zeros(n,2*n+1);
 
-        if k == 1 % Initiate filter
+                % Weights
+                W = [1-n/3 repmat(1/6,[1 2*n])];
 
-            % Time prediction
-            [xPred, PPred] = linearPrediction(x_0, P_0, A, Q);
+                % Matrix square root
+                sqrtP = sqrtm(P);
 
-        else
+                % Compute sigma points
+                SP(:,1) = x;
+                for i = 1:n
+                    SP(:,i+1) = x + sqrt(1/2/W(i+1))*sqrtP(:,i);
+                    SP(:,i+1+n) = x - sqrt(1/2/W(i+1+n))*sqrtP(:,i);
+                end
 
-            % Time prediction
-            [xPred, PPred] = linearPrediction(X(:,k-1), P(:,:,k-1), A, Q);
+            case 'CKF'
+
+                % Dimension of state
+                n = length(x);
+
+                % Allocate memory
+                SP = zeros(n,2*n);
+
+                % Weights
+                W = repmat(1/2/n,[1 2*n]);
+
+                % Matrix square root
+                sqrtP = sqrtm(P);
+
+                % Compute sigma points
+                for i = 1:n
+                    SP(:,i) = x + sqrt(n)*sqrtP(:,i);
+                    SP(:,i+n) = x - sqrt(n)*sqrtP(:,i);
+                end
+
+            otherwise
+                error('Incorrect type of sigma point')
+        end
+    end
+
+    function [h, H] = rangeBearingMeasurements(x, s)
+    %RANGEBEARINGMEASUREMENTS calculates the range and the bearing to the
+    %position given by the state vector x, from a sensor locateed in s
+    %
+    %Input:
+    %   x           [n x 1] State vector
+    %   s           [2 x 1] Sensor position
+    %
+    %Output:
+    %   h           [2 x 1] measurement vector
+    %   H           [2 x n] measurement model Jacobian
+    %
+    % NOTE: the measurement model assumes that in the state vector x, the first
+    % two states are X-position and Y-position.
+
+        % Range
+        rng = norm(x(1:2)-s);
+        % Bearing
+        ber = atan2(x(2)-s(2),x(1)-s(1));
+        % Measurement vector
+        h = [rng;ber];
+
+        % Measurement model Jacobian
+        H = [
+            (x(1)-s(1))/rng      (x(2)-s(2))/rng     0 0 0;
+            -(x(2)-s(2))/(rng^2) (x(1)-s(1))/(rng^2) 0 0 0
+            ];
+
+    end
+
+    function [f, F] = coordinatedTurnMotion(x, T)
+    %COORDINATEDTURNMOTION calculates the predicted state using a coordinated
+    %turn motion model, and also calculated the motion model Jacobian
+    %
+    %Input:
+    %   x           [5 x 1] state vector
+    %   T           [1 x 1] Sampling time
+    %
+    %Output:
+    %   f           [5 x 1] predicted state
+    %   F           [5 x 5] motion model Jacobian
+    %
+    % NOTE: the motion model assumes that the state vector x consist of the
+    % following states:
+    %   px          X-position
+    %   py          Y-position
+    %   v           velocity
+    %   phi         heading
+    %   omega       turn-rate
+
+        % Velocity
+        v = x(3);
+        % Heading
+        phi = x(4);
+        % Turn-rate
+        omega = x(5);
+
+        % Predicted state
+        f = x + [
+            T*v*cos(phi);
+            T*v*sin(phi);
+            0;
+            T*omega;
+            0];
+
+        % Motion model Jacobian
+        F = [
+            1 0 T*cos(phi) -T*v*sin(phi) 0;
+            0 1 T*sin(phi) T*v*cos(phi)  0;
+            0 0 1          0             0;
+            0 0 0          1             T;
+            0 0 0          0             1
+            ];
+    end
+
+    function X = genNonLinearStateSequence(x_0, P_0, f, T, Q, N)
+    %GENLINEARSTATESEQUENCE generates an N-long sequence of states using a
+    %    Gaussian prior and a linear Gaussian process model
+    %
+    %Input:
+    %   x_0         [n x 1] Prior mean
+    %   P_0         [n x n] Prior covariance
+    %   f           Motion model function handle
+    %   T           Sampling time
+    %   Q           [n x n] Process noise covariance
+    %   N           [1 x 1] Number of states to generate
+    %
+    %Output:
+    %   X           [n x N] State vector sequence
+    %
+
+        % Dimension of state vector
+        n = length(x_0);
+
+        % allocate memory
+        X = zeros(n, N);
+
+        % Generete start state
+        X(:,1) = mvnrnd(x_0', P_0)';
+
+        % Generate sequence
+        for k = 2:N+1
+
+            % generate noise vector
+            q = mvnrnd(zeros(1,n), Q)';
+
+            % Propagate through process model
+            [fX, ~] = f(X(:,k-1),T);
+            X(:,k) = fX + q;
 
         end
 
-        % Measurement update
-        [X(:,k), P(:,:,k)] = linearUpdate(xPred, PPred, Y(:,k), H, R);
+    end
+
+    function Y = genNonLinearMeasurementSequence(X, S, h, R)
+    %GENNONLINEARMEASUREMENTSEQUENCE generates ovservations of the states
+    % sequence X using a non-linear measurement model.
+    %
+    %Input:
+    %   X           [n x N+1] State vector sequence
+    %   S           [n x N] Sensor position vector sequence
+    %   h           Measurement model function handle
+    %   R           [m x m] Measurement noise covariance
+    %
+    %Output:
+    %   Y           [m x N] Measurement sequence
+    %
+
+        % Parameters
+        N = size(X,2);
+        m = size(R,1);
+
+        % Allocate memory
+        Y = zeros(m,N-1);
+
+        for k = 1:N-1
+            % Measurement
+            [hX,~] = h(X(:,k+1),S(:,k));
+            % Add noise
+            Y(:,k) = hX + mvnrnd(zeros(1,m), R)';
+
+        end
 
     end
-end
-
-function [x, P] = linearPrediction(x, P, A, Q)
-%LINEARPREDICTION calculates mean and covariance of predicted state
-%   density using a liear Gaussian model.
-%
-%Input:
-%   x           [n x 1] Prior mean
-%   P           [n x n] Prior covariance
-%   A           [n x n] State transition matrix
-%   Q           [n x n] Process noise covariance
-%
-%Output:
-%   x           [n x 1] predicted state mean
-%   P           [n x n] predicted state covariance
-%
-
-% Predicted mean
-x = A*x;
-
-% Predicted Covariance
-P = A*P*A' + Q;
-
-end
-
-function [x, P] = linearUpdate(x, P, y, H, R)
-%LINEARPREDICTION calculates mean and covariance of predicted state
-%   density using a liear Gaussian model.
-%
-%Input:
-%   x           [n x 1] Prior mean
-%   P           [n x n] Prior covariance
-%   H           [n x n] Measruement model matrix
-%   R           [n x n] Measurement noise covariance
-%
-%Output:
-%   x           [n x 1] updated state mean
-%   P           [n x n] updated state covariance
-%
-
-% Innovation
-v = y - H*x;
-S = H*P*H' + R;
-
-% Kalman gain
-K = P*H'/S;
-
-% Updated mean and covariance
-x = x + K*v;
-P = P - K*S*K';
-
-end

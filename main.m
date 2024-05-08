@@ -28,302 +28,225 @@ clc;  clear all;  close all;
 
 delete('Images/*.eps');
 
-% addpath('HA1');
-% addpath('HA2');
-% addpath('HA3');
+addpath('HA1');
+addpath('HA2');
+addpath('HA3');
 addpath('HA4');
 
-% rng(2); % Set random seed
+rng(1); % Set random seed
 
-scenario1 = true;
+scenario1 = false;
 scenario2 = true;
 scenario3 = true;
 
 if scenario1
+%% a)
 
-tol = 0.5;
+%% True track
+% Sampling period
+T = 0.1;
+% Length of time sequence
+K = 600;
+% Allocate memory
+omega = zeros(1,K+1);
+% Turn rate
+omega(150:450) = -pi/301/T;
+% Initial state
+x0 = [0 0 20 0 omega(1)]';
+% Allocate memory
+X_true = zeros(length(x0),K+1);
+X_true(:,1) = x0;
 
-% Number of time steps;
-N = 100;
+% Create true track
+for i=2:K+1
+    % Simulate
+    X_true(:,i) = coordinatedTurnMotion(X_true(:,i-1), T);
+    % Set turn−rate
+    X_true(5,i) = omega(i);
+end
+% Process model
+f = @(x, T) coordinatedTurnMotion(x, T); % Motion model
+Q_tuned = diag([0 0 0.1 0 pi/1800].^2);
 
-% Define prior
-x_0     = [0 0 10 0 0]';
-n       = length(x_0);
-P_0     = diag([1 1 1 1*pi/180 1*pi/180].^2);
-
-% Covariance 
-sigV = 1;
-sigOmega = 1*pi/180;
-G = [zeros(2,2); 1 0; 0 0; 0 1];
-Q = G*diag([sigV^2 sigOmega^2])*G';
-
-% Motion model
-motionModel = @coordinatedTurnMotion;
-
-% Random sensor position sequence
-S = zeros(2,N);
-
-% Measurement noise covariance
-R = diag([10 5*pi/180].^2).*1000;
+% Prior
+x_0 = zeros(5,1);
+P_0 = diag([10 10 10 5*pi/180 pi/180].^2);
 
 % Measurement model
-measModel = @rangeBearingMeasurements;
+s1 = [300; -100];
+s2 = [300; -300];
+S = [s1(1) s2(1) 0 0 0;s1(2) s2(2) 0 0 0];
+h = @(x) dualBearingMeasurement(x, s1, s2); % Measurement model
+sigma_phi_1 = pi/180;
+sigma_phi_2 = pi/180;
+R = diag([sigma_phi_1 sigma_phi_2].^2); % Measurement noise covariance
 
-% function handle for generating sigma points
-genSigmaPoints = @sigmaPoints;
+Y = genNonLinearMeasurementSequence(X_true, h, R);
+h = @(x, S) dualBearingMeasurement(x, S(:,1), S(:,2)); % Measurement model
+
+% Positions corresponding to the measurements
+N = size(Y, 2);
+sensorPositions_x = zeros(N, 1);
+sensorPositions_y = zeros(N, 1);
+for j=1:N
+    [sensor_x, sensor_y] = getPosFromMeasurement(Y(1,j), Y(2,j), s1, s2);
+    sensorPositions_x(j) = sensor_x;
+    sensorPositions_y(j) = sensor_y;
+end
+sigmaPoints = @sigmaPoints;
+% Filtered & smoothed position trajectories
+[xs, Ps, xf, Pf, xp, Pp] = nonLinRTSsmoother(Y, x_0, P_0, f, T, Q_tuned, S, h, R, sigmaPoints, 'CKF');
 
 
-% Sample time
-T = rand;
-
-% generate state sequence
-X = genNonLinearStateSequence(x_0, P_0, motionModel, T, Q, N);
-
-% generate measurements
-Y = genNonLinearMeasurementSequence(X, S, measModel, R);
-
-% Kalman filter
-[xEs, PEs, xEf, PEf, xEp, PEp] = ...
-    nonLinRTSsmoother(Y, x_0, P_0, motionModel, T, Q, S, measModel, R, genSigmaPoints, 'EKF');
-
-% % Range
-% rng = norm(x(1:2)-s);
-% % Bearing
-% ber = atan2(x(2)-s(2),x(1)-s(1));
-meas_x = Y(1,:);
-
-% plot
+% Plot
 figure;
-hold on;
-plot(X(1,:),X(2,:),'b');
-plot(Y(1,:),Y(2,:),'r*');
-plot(S(:,1),S(:,1),'ko');
-plot(xEs(1,:),xEs(2,:),'g');
-plot(xEf(1,:),xEf(2,:),'k');
-plot(xEp(1,:),xEp(2,:),'m');
-hold off;
-legend('True','Measurements', 'sensors position' , 'Smoothed','Filtered','Predicted');
-xlabel('X-position');
-ylabel('Y-position');
 grid on;
+hold on;
+plot(sensorPositions_x, sensorPositions_y, '.', 'Color', [.4 .4 .4], 'MarkerSize', 8);
+plot(xf(1,:), xf(2,:), 'r');
+plot(xs(1,:), xs(2,:), 'b');
+% Plot the 3-sigma level curve around every 5th point
+for i=5:5:N
+    xy_3_f = sigmaEllipse2D(xf(1:2,i), Pf(1:2,1:2,i), 3, 100);
+    xy_3_s = sigmaEllipse2D(xs(1:2,i), Ps(1:2,1:2,i), 3, 100);
+    plot(xy_3_f(1,:), xy_3_f(2,:), 'k-', 'LineWidth', 1);
+    plot(xy_3_s(1,:), xy_3_s(2,:), 'c-', 'LineWidth', 1);
+end
+hold off;
+xlim([-10 500]);
+ylim([-450 100]);
+xlabel('x');
+ylabel('y');
+legend('Measurements', 'Filtered', 'Smoothed', 'Filtered covariance (3\sigma)', 'Smoothed covariance (3\sigma)')
 
+print('Images/1_a_smoothed.eps', '-depsc');
+
+%% b) Outlier
+% Modify measurement at k = 300
+Y(:,300) = Y(:,300) + mvnrnd([0 0], R*1000)';
+
+% Positions corresponding to the measurements
+N = size(Y, 2);
+sensorPositions_x = zeros(N, 1);
+sensorPositions_y = zeros(N, 1);
+for j=1:N
+    [sensor_x, sensor_y] = getPosFromMeasurement(Y(1,j), Y(2,j), s1, s2);
+    sensorPositions_x(j) = sensor_x;
+    sensorPositions_y(j) = sensor_y;
+end
+sigmaPoints = @sigmaPoints;
+% Filtered & smoothed position trajectories
+[xs, Ps, xf, Pf, xp, Pp] = nonLinRTSsmoother(Y, x_0, P_0, f, T, Q_tuned, S, h, R, sigmaPoints, 'CKF');
+
+
+% Plot
+figure;
+grid on;
+hold on;
+plot(sensorPositions_x, sensorPositions_y, '.', 'Color', [.4 .4 .4], 'MarkerSize', 8);
+plot(xf(1,:), xf(2,:), 'r');
+plot(xs(1,:), xs(2,:), 'b');
+% Plot the 3-sigma level curve around every 5th point
+for i=5:5:N
+    xy_3_f = sigmaEllipse2D(xf(1:2,i), Pf(1:2,1:2,i), 3, 100);
+    xy_3_s = sigmaEllipse2D(xs(1:2,i), Ps(1:2,1:2,i), 3, 100);
+    plot(xy_3_f(1,:), xy_3_f(2,:), 'k-', 'LineWidth', 1);
+    plot(xy_3_s(1,:), xy_3_s(2,:), 'c-', 'LineWidth', 1);
+end
+% Add red circle around modified measurement
+plot(sensorPositions_x(300), sensorPositions_y(300), 'ro', 'MarkerSize', 10, 'LineWidth', 2);
+hold off;
+xlim([-10 500]);
+ylim([-450 100]);
+xlabel('x');
+ylabel('y');
+legend('Measurements', 'Filtered', 'Smoothed', 'Filtered covariance (3\sigma)', 'Smoothed covariance (3\sigma)')
+
+print('Images/1_b_outlier.eps', '-depsc');
 
 end % scenario1
 
+if scenario2
+%% a) Resampling
+
+% Models
+A = 1;
+f = @(x, A) (A*x);
+Q = 1.5;
+
+% Measurement model
+H = 1;
+h = @(x, H) (H*x);
+R = 3;
+m = size(H,1);
+
+% Prior
+x_0 = 2;
+P_0 = 8;
+n = size(x_0,1);
+
+% Number of time steps
+K = 30;
+
+% Generate state and measurement sequences
+X = zeros(n,K);
+Y = zeros(m,K);
+
+q = mvnrnd([0 0], Q, K)';
+r = mvnrnd(zeros(1,m), R, K)';
+xk = x_0;
+for k = 1:K
+    xk = f(xk,A) + q(:,k);
+    X(:,k) = xk;
+
+    Y(:,k) = h(xk, H) + r(:,k);
+end
+
+% Run Kalman filter
+[Xf, Pf] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
+
+% Run PF filter with and without resampling
+N = 20000;
+proc_f = @(X_kmin1) (f(X_kmin1, A));
+meas_h = @(X_k) (h(X_k, H));
+plotFunc = @(k, Xk, Xkmin1, Wk, j) (0); % Define dummy function that does nothing
+
+[xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, ...
+                              N, false, plotFunc);
+
+% [xfpr, Pfpr, Xpr, Wpr] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, ...
+%                                   N, right, plotFunc);
+
+
+% plot(X(2,:));
+% plot(X(1,:));
+plot(X(1,:), X(2,:));
+hold on;
+% plot(Xf(2,:), 'c');
+% plot(Xf(1,:), 'c');
+plot(Xf(1,:), Xf(2,:), 'c');
+% plot(xfp(2,:), 'r');
+% plot(xfpr(2,:), 'g');
+% plot(xfp(1,:), 'r');
+% plot(xfpr(1,:), 'g');
+plot(xfp(1,:), xfp(2,:), 'r');
+% plot(xfpr(1,:), xfpr(2,:),'g');
+hold off;
+% Plot a circle on the first value of each trajectory
+hold on;
+plot(X(1,1), X(2,1), 'ro', 'MarkerSize', 10);
+plot(Xf(1,1), Xf(2,1), 'co', 'MarkerSize', 10);
+plot(xfp(1,1), xfp(2,1), 'ro', 'MarkerSize', 10);
+hold off;
+legend('True state', 'KF', 'PF');
+
+
+
+
+
+end % scenario2
 
 
 %% Export the source code as .txt file.
 filename = fullfile('main.m');
 copyfile(filename,'main.txt','f');
-
-
-
-
-
-%% TO REMOVE
-
-
-function [SP,W] = sigmaPoints(x, P, type)
-    % SIGMAPOINTS computes sigma points, either using unscented transform or
-    % using cubature.
-    %
-    %Input:
-    %   x           [n x 1] Prior mean
-    %   P           [n x n] Prior covariance
-    %
-    %Output:
-    %   SP          [n x 2n+1] matrix with sigma points
-    %   W           [1 x 2n+1] vector with sigma point weights 
-    %
-    
-        switch type        
-            case 'UKF'
-    
-                % Dimension of state
-                n = length(x);
-    
-                % Allocate memory
-                SP = zeros(n,2*n+1);
-    
-                % Weights
-                W = [1-n/3 repmat(1/6,[1 2*n])];
-    
-                % Matrix square root
-                sqrtP = sqrtm(P);
-    
-                % Compute sigma points
-                SP(:,1) = x;
-                for i = 1:n
-                    SP(:,i+1) = x + sqrt(1/2/W(i+1))*sqrtP(:,i);
-                    SP(:,i+1+n) = x - sqrt(1/2/W(i+1+n))*sqrtP(:,i);
-                end
-    
-            case 'CKF'
-    
-                % Dimension of state
-                n = length(x);
-    
-                % Allocate memory
-                SP = zeros(n,2*n);
-    
-                % Weights
-                W = repmat(1/2/n,[1 2*n]);
-    
-                % Matrix square root
-                sqrtP = sqrtm(P);
-    
-                % Compute sigma points
-                for i = 1:n
-                    SP(:,i) = x + sqrt(n)*sqrtP(:,i);
-                    SP(:,i+n) = x - sqrt(n)*sqrtP(:,i);
-                end
-    
-            otherwise
-                error('Incorrect type of sigma point')
-        end
-    end
-    
-    function [h, H] = rangeBearingMeasurements(x, s)
-    %RANGEBEARINGMEASUREMENTS calculates the range and the bearing to the
-    %position given by the state vector x, from a sensor locateed in s
-    %
-    %Input:
-    %   x           [n x 1] State vector
-    %   s           [2 x 1] Sensor position
-    %
-    %Output:
-    %   h           [2 x 1] measurement vector
-    %   H           [2 x n] measurement model Jacobian
-    %
-    % NOTE: the measurement model assumes that in the state vector x, the first
-    % two states are X-position and Y-position.
-    
-        % Range
-        rng = norm(x(1:2)-s);
-        % Bearing
-        ber = atan2(x(2)-s(2),x(1)-s(1));
-        % Measurement vector
-        h = [rng;ber];
-    
-        % Measurement model Jacobian
-        H = [
-            (x(1)-s(1))/rng      (x(2)-s(2))/rng     0 0 0;
-            -(x(2)-s(2))/(rng^2) (x(1)-s(1))/(rng^2) 0 0 0
-            ];
-    
-    end
-    
-    function [f, F] = coordinatedTurnMotion(x, T)
-    %COORDINATEDTURNMOTION calculates the predicted state using a coordinated
-    %turn motion model, and also calculated the motion model Jacobian
-    %
-    %Input:
-    %   x           [5 x 1] state vector
-    %   T           [1 x 1] Sampling time
-    %
-    %Output:
-    %   f           [5 x 1] predicted state
-    %   F           [5 x 5] motion model Jacobian
-    %
-    % NOTE: the motion model assumes that the state vector x consist of the
-    % following states:
-    %   px          X-position
-    %   py          Y-position
-    %   v           velocity
-    %   phi         heading
-    %   omega       turn-rate
-    
-        % Velocity
-        v = x(3);
-        % Heading
-        phi = x(4);
-        % Turn-rate
-        omega = x(5);
-    
-        % Predicted state
-        f = x + [
-            T*v*cos(phi);
-            T*v*sin(phi);
-            0;
-            T*omega;
-            0];
-    
-        % Motion model Jacobian
-        F = [
-            1 0 T*cos(phi) -T*v*sin(phi) 0;
-            0 1 T*sin(phi) T*v*cos(phi)  0;
-            0 0 1          0             0;
-            0 0 0          1             T;
-            0 0 0          0             1
-            ];
-    end
-    
-    function X = genNonLinearStateSequence(x_0, P_0, f, T, Q, N)
-    %GENLINEARSTATESEQUENCE generates an N-long sequence of states using a 
-    %    Gaussian prior and a linear Gaussian process model
-    %
-    %Input:
-    %   x_0         [n x 1] Prior mean
-    %   P_0         [n x n] Prior covariance
-    %   f           Motion model function handle
-    %   T           Sampling time
-    %   Q           [n x n] Process noise covariance
-    %   N           [1 x 1] Number of states to generate
-    %
-    %Output:
-    %   X           [n x N] State vector sequence
-    %
-    
-        % Dimension of state vector
-        n = length(x_0);
-    
-        % allocate memory
-        X = zeros(n, N);
-    
-        % Generete start state
-        X(:,1) = mvnrnd(x_0', P_0)';
-    
-        % Generate sequence
-        for k = 2:N+1
-    
-            % generate noise vector
-            q = mvnrnd(zeros(1,n), Q)';
-    
-            % Propagate through process model
-            [fX, ~] = f(X(:,k-1),T);
-            X(:,k) = fX + q;
-    
-        end
-    
-    end
-    
-    function Y = genNonLinearMeasurementSequence(X, S, h, R)
-    %GENNONLINEARMEASUREMENTSEQUENCE generates ovservations of the states 
-    % sequence X using a non-linear measurement model.
-    %
-    %Input:
-    %   X           [n x N+1] State vector sequence
-    %   S           [n x N] Sensor position vector sequence
-    %   h           Measurement model function handle
-    %   R           [m x m] Measurement noise covariance
-    %
-    %Output:
-    %   Y           [m x N] Measurement sequence
-    %
-    
-        % Parameters
-        N = size(X,2);
-        m = size(R,1);
-    
-        % Allocate memory
-        Y = zeros(m,N-1);
-    
-        for k = 1:N-1
-            % Measurement
-            [hX,~] = h(X(:,k+1),S(:,k));
-            % Add noise
-            Y(:,k) = hX + mvnrnd(zeros(1,m), R)';
-    
-        end
-    
-    end

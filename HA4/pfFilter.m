@@ -32,30 +32,25 @@ function [xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, proc_Q, meas_h, meas
         Wp = zeros(N, K);
     end
 
-    X_k = repmat(x_0, 1, N);
-    W_k = 1/N*ones(1, N);
+    X_k = zeros(n, N);
+    W_k = zeros(1, N);
+    for i = 1:N
+        X_k(:,i) = mvnrnd(proc_f(x_0), P_0);
+        W_k(i) = 1/N;
+    end
 
     for k = 1:K
         disp(k)
-        X_kmin1 = zeros(n, N);
-        W_kmin1 = zeros(1, N);
-        for i = 1:N
-            X_kmin1(:,i) = mvnrnd(proc_f(x_0), P_0);
-            W_kmin1(i) = 1/N;
-        end
-        tic
         [X_k, W_k] = pfFilterStep(X_k, W_k, Y(:,k), proc_f, proc_Q, meas_h, meas_R);
         if bResample
             [X_k, W_k, j] = resampl(X_k, W_k);
             % plotFunc(k, X_k, x_0, W_k, j);
         end
-        toc
         % plotFunc(k, X_k, x_0, W_k);
-        xfp(:,k) = sum(X_k.*W_k, 2);
-        for t = 1:N
-            D = xfp(:,k) - X_k(:,t);
-            Pfp(:,:,k) = Pfp(:,:,k) + D*D'.*W_k(t);
-        end
+
+        xfp(:,k) = X_k*W_k';
+        Pfp(:,:,k) = (X_k-xfp(:,k)) * ((X_k-xfp(:,k))'.* W_k');
+
         % Only output the particles if the function is called with more than 2 output arguments.
         if nargout > 2
             Xp(:,:,k) = X_k;

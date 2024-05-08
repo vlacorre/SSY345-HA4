@@ -1,7 +1,7 @@
 function [xs, Ps, xf, Pf, xp, Pp] = ...
     nonLinRTSsmoother(Y, x_0, P_0, f, T, Q, S, h, R, sigmaPoints, type)
-    %NONLINRTSSMOOTHER Filters measurement sequence Y using a 
-    % non-linear Kalman filter. 
+    %NONLINRTSSMOOTHER Filters measurement sequence Y using a
+    % non-linear Kalman filter.
     %
     %Input:
     %   Y           [m x N] Measurement sequence for times 1,...,N
@@ -28,7 +28,6 @@ function [xs, Ps, xf, Pf, xp, Pp] = ...
     N = size(Y, 2);
     n = size(x_0, 1);
 
-
     % Filter
     xf = zeros(n,N);
     Pf = zeros(n,n,N);
@@ -42,18 +41,15 @@ function [xs, Ps, xf, Pf, xp, Pp] = ...
         [xf(:,i), Pf(:,:,i)] = nonLinKFupdate(xp(:,i), Pp(:,:,i), Y(:,i), S, h, R, sigmaPoints, type);
     end
 
-    
+
     % Smoother
     xs = zeros(n,N);
     Ps = zeros(n,n,N);
 
-    xs(:,1) = xf(:,1);
-    Ps(:,:,1) = Pf(:,:,1);
-    
     xs(:,N) = xf(:,N);
     Ps(:,:,N) = Pf(:,:,N);
 
-    for i = N-1:-1:2
+    for i = N-1:-1:1
         [xs(:,i), Ps(:,:,i)] = nonLinRTSSupdate(xs(:,i+1), Ps(:,:,i+1), xf(:,i), Pf(:,:,i), xp(:,i+1), Pp(:,:,i+1), f, T, sigmaPoints, type);
     end
 
@@ -67,7 +63,7 @@ end
 
 function [xs, Ps] = nonLinRTSSupdate(xs_kplus1, ...
     Ps_kplus1, ...
-    xf_k, ... 
+    xf_k, ...
     Pf_k, ...
     xp_kplus1, ...
     Pp_kplus1, ...
@@ -258,7 +254,7 @@ function [x, P] = predictMeanAndCovWithSigmaPoints(x, P, f, T, Q, sigmaPoints, t
 %
 %Input:
 %   x           [n x 1] mean vector
-%   P           [n x n] covariance matrix 
+%   P           [n x n] covariance matrix
 %   f           measurement model function handle
 %   T           sample time
 %   Q           [m x m] process noise covariance matrix

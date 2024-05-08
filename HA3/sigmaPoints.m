@@ -10,7 +10,6 @@ function [SP,W] = sigmaPoints(x, P, type)
   %   SP          [n x 2n+1] UKF, [n x 2n] CKF. Matrix with sigma points
   %   W           [1 x 2n+1] UKF, [1 x 2n] UKF. Vector with sigma point weights
   %
-
   n = size(x,1);
   P_sqrt = sqrtm(P);
 
