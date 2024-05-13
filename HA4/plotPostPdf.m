@@ -57,6 +57,7 @@ function plotPostPdf(k, Xk, Wk, xf, Pf, bResample, sigma, ax)
     title(['p(x_k |  y_{1:k}), k=', num2str(k)])
     hold off;
     % pause()
+
 end
 
 

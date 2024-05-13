@@ -256,8 +256,6 @@ fprintf('N = %d Mean Square Error (KF): %.4f\n', N, mse_kf);
 fprintf('N = %d Mean Square Error (PF without resampling): %.4f\n', N, mse_pf);
 fprintf('N = %d Mean Square Error (PF with resampling): %.4f\n', N, mse_pf_resampling);
 
-% Plot Gaussian particles for k=2, k=15, k=29
-
 
 
 %% b) Incorrect prior
@@ -303,7 +301,6 @@ P_0 = 2;
 [Xf, Pf] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
 
 N = 1000;
-proc_f = @(X_kmin1) (f(X_kmin1, A));
 meas_h = @(X_k) (h(X_k, H));
 plotFunc = @(~) (0); % Define dummy function that does nothing
 
@@ -335,9 +332,9 @@ P_0 = 8;
 
 N = 100;
 plotFunc = @plotPartTrajs;
+figure;
 [xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, false, plotFunc);
 
-figure;
 grid on;
 plot(X(1,:), 'r');
 hold on;
@@ -356,9 +353,9 @@ print('Images/2_c_plotPartTrajs.eps', '-depsc');
 
 N = 100;
 plotFunc = @plotPartTrajs;
+figure;
 [xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, true, plotFunc);
 
-figure;
 grid on;
 plot(X(1,:), 'r');
 hold on;
@@ -388,13 +385,140 @@ for i=2:size(Xk,2)
 end
 
 % Velocity measurements
-sigma_v = 0.1;
+sigma_v = 0.001;
 Y = V + mvnrnd([0 0], sigma_v*eye(2), size(V,2))';
 figure;
-plot(Y(1,:), Y(2,:), '.', 'Color', [.4 .4 .4], 'MarkerSize', 10);
+plot(Y(1,:), Y(2,:), '.', 'Color', [.4 .4 .4], 'MarkerSize', 15);
 xlabel('x');
 ylabel('y');
-title('Measurements');
+print('Images/3_b_velocity_measurements.eps', '-depsc');
+
+%% d)
+% Constant velocity motion model
+T = 1; % Empirically chosen
+A = [1 0 T 0; 0 1 0 T; 0 0 1 0; 0 0 0 1];
+f = @(x) A*x;
+sigma_pos = 0.1;
+sigma_speed = 1;
+Q = diag([sigma_pos sigma_pos sigma_speed sigma_speed].^2);
+
+% Measurement model
+H = [0 0 1 0; 0 0 0 1];
+meas_h = @(x) H*x;
+sigma_meas_speed = 0.1;
+R = diag([sigma_meas_speed sigma_meas_speed].^2);
+
+% Prior
+x_0 = [Xk(:,1); 0; 0];
+P_0 = diag([0 0 0.1 0.1].^2);
+
+N = 1000;
+plotFunc = @plotPartTrajs;
+plotFunc = @plotPostPdf;
+plotFunc = @(~) (0); % Define dummy function that does nothing
+[xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, f, Q, meas_h, R, N, true, plotFunc);
+% [xfp_wd, Pfp_wd, Xp_wd, Wp_wd] = pfFilter_wall_detection(x_0, P_0, Y, f, Q, meas_h, R, N, true, plotFunc);
+% [xfp, Pfp] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
+
+figure;
+grid on;
+plot(Xk(1,:), Xk(2,:), 'rx-');
+hold on;
+plot(xfp(1,:), xfp(2,:), 'bx-');
+% plot(xfp_wd(1,:), xfp_wd(2,:), 'gx-');
+
+% plot particles around some posteriors
+part_group = [];
+K = size(Y, 2);
+for k=1:2:K
+    % Sort Xp by weight
+    [~, I] = sort(Wp(:,k), 'descend');
+    for i=1:3
+        part_group = [part_group; Xp(1,I(i),k) Xp(2,I(i),k)];
+    end
+end
+plot(part_group(:,1), part_group(:,2), 'm*', 'MarkerSize', 12);
+
+% plot particles around some posteriors
+% part_group = [];
+% K = size(Y, 2);
+% for k=1:2:K
+%     % Sort Xp by weight
+%     [~, I] = sort(Wp_wd(:,k), 'descend');
+%     for i=1:3
+%         part_group = [part_group; Xp_wd(1,I(i),k) Xp_wd(2,I(i),k)];
+%     end
+% end
+% plot(part_group(:,1), part_group(:,2), 'k.', 'MarkerSize', 30);
+
+plot([1+1i 1+9*1i 5+9*1i])
+plot([7+9*1i 11+9*1i 11+1i 7+1i]);plot([5+1i 1+1i])
+plot([2+5.2*1i 2+8.3*1i 4+8.3*1i 4+5.2*1i 2+5.2*1i])%House 1
+plot([2+3.7*1i 2+4.4*1i 4+4.4*1i 4+3.7*1i 2+3.7*1i])%House 2
+plot([2+2*1i 2+3.2*1i 4+3.2*1i 4+2*1i 2+2*1i])%House 3
+plot([5+1i 5+2.2*1i 7+2.2*1i 7+1i])%House 4
+plot([5+2.8*1i 5+5.5*1i 7+5.5*1i 7+2.8*1i 5+2.8*1i])%House 5
+plot([5+6.2*1i 5+9*1i]);plot([7+9*1i 7+6.2*1i 5+6.2*1i])%House 6
+plot([8+4.6*1i 8+8.4*1i 10+8.4*1i 10+4.6*1i 8+4.6*1i])%House 7
+plot([8+2.4*1i 8+4*1i 10+4*1i 10+2.4*1i 8+2.4*1i])%House 8
+plot([8+1.7*1i 8+1.8*1i 10+1.8*1i 10+1.7*1i 8+1.7*1i])%House 9
+
+axis([0.8 11.2 0.8 9.2])
+
+hold off;
+xlabel('x');
+ylabel('y');
+legend('True state', 'PF', 'PF with wall detection', 'PF particles', 'PF particles with wall detection');
+print('Images/3_d_PF_perfect_prior.eps', '-depsc');
+
+%% e) No prior
+
+
+% Prior
+x_0 = [6; 5; 0; 0];
+P_0 = diag([5 5 0.1 0.1].^2);
+
+N = 10000;
+plotFunc = @plotPartTrajs;
+plotFunc = @(~) (0); % Define dummy function that does nothing
+[xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, f, Q, meas_h, R, N, true, plotFunc);
+[xfp_wd, Pfp_wd, Xp_wd, Wp_wd] = pfFilter_wall_detection_customP(x_0, P_0, Y, f, Q, meas_h, R, N, true, plotFunc);
+% [xfp, Pfp] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
+
+figure;
+grid on;
+plot(Xk(1,:), Xk(2,:), 'rx-');
+hold on;
+plot(xfp(1,:), xfp(2,:), 'bx-');
+plot(xfp_wd(1,:), xfp_wd(2,:), 'gx-');
+
+plot([1+1i 1+9*1i 5+9*1i])
+plot([7+9*1i 11+9*1i 11+1i 7+1i]);plot([5+1i 1+1i])
+plot([2+5.2*1i 2+8.3*1i 4+8.3*1i 4+5.2*1i 2+5.2*1i])%House 1
+plot([2+3.7*1i 2+4.4*1i 4+4.4*1i 4+3.7*1i 2+3.7*1i])%House 2
+plot([2+2*1i 2+3.2*1i 4+3.2*1i 4+2*1i 2+2*1i])%House 3
+plot([5+1i 5+2.2*1i 7+2.2*1i 7+1i])%House 4
+plot([5+2.8*1i 5+5.5*1i 7+5.5*1i 7+2.8*1i 5+2.8*1i])%House 5
+plot([5+6.2*1i 5+9*1i]);plot([7+9*1i 7+6.2*1i 5+6.2*1i])%House 6
+plot([8+4.6*1i 8+8.4*1i 10+8.4*1i 10+4.6*1i 8+4.6*1i])%House 7
+plot([8+2.4*1i 8+4*1i 10+4*1i 10+2.4*1i 8+2.4*1i])%House 8
+plot([8+1.7*1i 8+1.8*1i 10+1.8*1i 10+1.7*1i 8+1.7*1i])%House 9
+
+axis([0.8 11.2 0.8 9.2])
+
+% plot particles around each posterior
+K = size(Y, 2);
+for k=1:5:K
+    for i=1:50
+        plot(Xp_wd(1,i,k), Xp_wd(2,i,k), '.', 'Color', [0.5 0.5 0.5], 'MarkerSize', 30);
+    end
+end
+hold off;
+xlabel('x');
+ylabel('y');
+legend('True state', 'PF', 'PF with wall detection', 'PF particles', 'PF particles with wall detection');
+print('Images/3_d_PF_no_prior.eps', '-depsc');
+
 
 end % scenario3
 

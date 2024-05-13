@@ -1,4 +1,4 @@
-function [xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, proc_Q, meas_h, meas_R, ...
+function [xfp, Pfp, Xp, Wp] = pfFilter_wall_detection_customP(x_0, P_0, Y, proc_f, proc_Q, meas_h, meas_R, ...
     N, bResample, plotFunc)
     %PFFILTER Filters measurements Y using the SIS or SIR algorithms and a
     % state-space model.
@@ -48,19 +48,28 @@ function [xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, proc_Q, meas_h, meas
             j = 1:N;
         end
 
+        % [bool] = isOnRoad(x,y);
+        % Resample particles that are not on road
+        for i = 1:N
+            original = X_k(:,i);
+            count = 0;
+            while ~isOnRoad(X_k(1,i), X_k(2,i)) && count < 100
+                count = count + 1;
+                X_k(:,i) = mvnrnd(proc_f(original), diag([5 5 0.1 0.1]));
+            end
+        end
+
         xfp(:,k) = X_k*W_k';
         Pfp(:,:,k) = (X_k-xfp(:,k)) * ((X_k-xfp(:,k))'.* W_k');
 
-        % 2.a)
         if nargin(plotFunc) == 8
             ax = [-10 10 -10 10]; % ax = [xmin xmax ymin ymax];
             timeStepsToPlot = [2 15 29];
             if any(k == timeStepsToPlot)
                 plotFunc(k, X_k, W_k, xfp, Pfp, bResample, 1, ax);
-                print(['Images/2_a_posterior_pdf_', num2str(k),'.eps'], '-depsc');
             end
         end
-        % 2.c)
+
         if nargin(plotFunc) == 5
             plotFunc(k, X_k, X_kmin1, W_k, j);
         end
