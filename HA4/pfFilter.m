@@ -40,16 +40,29 @@ function [xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, proc_Q, meas_h, meas
     end
 
     for k = 1:K
-        disp(k)
+        X_kmin1 = X_k;
         [X_k, W_k] = pfFilterStep(X_k, W_k, Y(:,k), proc_f, proc_Q, meas_h, meas_R);
         if bResample
             [X_k, W_k, j] = resampl(X_k, W_k);
-            % plotFunc(k, X_k, x_0, W_k, j);
+        else
+            j = 1:N;
         end
-        % plotFunc(k, X_k, x_0, W_k);
 
         xfp(:,k) = X_k*W_k';
         Pfp(:,:,k) = (X_k-xfp(:,k)) * ((X_k-xfp(:,k))'.* W_k');
+
+        % 2.a)
+        if nargin(plotFunc) == 8
+            ax = [-10 10 -10 10]; % ax = [xmin xmax ymin ymax];
+            timeStepsToPlot = [2 15 29];
+            if any(k == timeStepsToPlot)
+                plotFunc(k, X_k, W_k, xfp, Pfp, bResample, 1, ax);
+            end
+        end
+        % 2.c)
+        if nargin(plotFunc) == 5
+            plotFunc(k, X_k, X_kmin1, 0, j);
+        end
 
         % Only output the particles if the function is called with more than 2 output arguments.
         if nargout > 2

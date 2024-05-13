@@ -24,7 +24,7 @@ set(0, 'DefaultLegendFontSizeMode', 'manual');
 set(0, 'DefaultLegendFontSize', 20);
 set(0, 'DefaultLegendLocation', 'best');
 
-clc;  clear all;  close all;
+clc; clear all; close all;
 
 delete('Images/*.eps');
 
@@ -36,7 +36,7 @@ addpath('HA4');
 rng(1); % Set random seed
 
 scenario1 = false;
-scenario2 = true;
+scenario2 = false;
 scenario3 = true;
 
 if scenario1
@@ -192,7 +192,7 @@ K = 30;
 X = zeros(n,K);
 Y = zeros(m,K);
 
-q = mvnrnd([0 0], Q, K)';
+q = mvnrnd(zeros(1,n), Q, K)';
 r = mvnrnd(zeros(1,m), R, K)';
 xk = x_0;
 for k = 1:K
@@ -205,48 +205,215 @@ end
 % Run Kalman filter
 [Xf, Pf] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
 
-% Run PF filter with and without resampling
-N = 20000;
+% PF with poor choice of N
+N = 100;
 proc_f = @(X_kmin1) (f(X_kmin1, A));
 meas_h = @(X_k) (h(X_k, H));
-plotFunc = @(k, Xk, Xkmin1, Wk, j) (0); % Define dummy function that does nothing
+plotFunc = @(~) (0); % Define dummy function that does nothing
 
-[xfp, Pfp, Xp, Wp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, ...
-                              N, false, plotFunc);
+[xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, false, plotFunc);
 
-% [xfpr, Pfpr, Xpr, Wpr] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, ...
-%                                   N, right, plotFunc);
+[xfpr, Pfpr] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, true, plotFunc);
+
+mse_kf = mean((Xf(1,:) - X(1,:)).^2);
+mse_pf = mean((xfp(1,:) - X(1,:)).^2);
+mse_pf_resampling = mean((xfpr(1,:) - X(1,:)).^2);
+fprintf('N = %d Mean Square Error (KF): %.4f\n', N, mse_kf);
+fprintf('N = %d Mean Square Error (PF without resampling): %.4f\n', N, mse_pf);
+fprintf('N = %d Mean Square Error (PF with resampling): %.4f\n', N, mse_pf_resampling);
 
 
-% plot(X(2,:));
-% plot(X(1,:));
-plot(X(1,:), X(2,:));
+% PF with good choice of N
+N = 1000;
+proc_f = @(X_kmin1) (f(X_kmin1, A));
+meas_h = @(X_k) (h(X_k, H));
+plotFunc = @plotPostPdf;
+[xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, false, plotFunc);
+
+plotFunc = @(~) (0); % Define dummy function that does nothing
+[xfpr, Pfpr] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, true, plotFunc);
+
+figure;
+grid on;
+plot(X(1,:), 'r');
 hold on;
-% plot(Xf(2,:), 'c');
-% plot(Xf(1,:), 'c');
-plot(Xf(1,:), Xf(2,:), 'c');
-% plot(xfp(2,:), 'r');
-% plot(xfpr(2,:), 'g');
-% plot(xfp(1,:), 'r');
-% plot(xfpr(1,:), 'g');
-plot(xfp(1,:), xfp(2,:), 'r');
-% plot(xfpr(1,:), xfpr(2,:),'g');
+errorbar(Xf(1,:),Pf(1,:), 'k', 'LineWidth', 1.5);
+errorbar(xfp(1,:),Pfp(1,:), 'b', 'LineWidth', 1.5);
+errorbar(xfpr(1,:),Pfpr(1,:), 'm--', 'LineWidth', 1.5);
+plot(Y(1,:), 'x', 'Color', [.4 .4 .4], 'MarkerSize', 10);
 hold off;
-% Plot a circle on the first value of each trajectory
+xlabel('k');
+ylabel('x');
+legend('True state', 'KF', 'PF', 'PF with resampling', 'Measurements');
+
+print('Images/2_a_resampling.eps', '-depsc');
+
+mse_kf = mean((Xf(1,:) - X(1,:)).^2);
+mse_pf = mean((xfp(1,:) - X(1,:)).^2);
+mse_pf_resampling = mean((xfpr(1,:) - X(1,:)).^2);
+
+fprintf('N = %d Mean Square Error (KF): %.4f\n', N, mse_kf);
+fprintf('N = %d Mean Square Error (PF without resampling): %.4f\n', N, mse_pf);
+fprintf('N = %d Mean Square Error (PF with resampling): %.4f\n', N, mse_pf_resampling);
+
+% Plot Gaussian particles for k=2, k=15, k=29
+
+
+
+%% b) Incorrect prior
+
+% Models
+A = 1;
+f = @(x, A) (A*x);
+Q = 1.5;
+
+% Measurement model
+H = 1;
+h = @(x, H) (H*x);
+R = 3;
+m = size(H,1);
+
+% Prior
+x_0 = 2;
+P_0 = 8;
+n = size(x_0,1);
+
+% Number of time steps
+K = 30;
+
+% Generate state and measurement sequences
+X = zeros(n,K);
+Y = zeros(m,K);
+
+q = mvnrnd(zeros(1,n), Q, K)';
+r = mvnrnd(zeros(1,m), R, K)';
+xk = x_0;
+for k = 1:K
+    xk = f(xk,A) + q(:,k);
+    X(:,k) = xk;
+
+    Y(:,k) = h(xk, H) + r(:,k);
+end
+
+% Incorrect prior
+x_0 = -20;
+P_0 = 2;
+
+% Run Kalman filter
+[Xf, Pf] = kalmanFilter(Y, x_0, P_0, A, Q, H, R);
+
+N = 1000;
+proc_f = @(X_kmin1) (f(X_kmin1, A));
+meas_h = @(X_k) (h(X_k, H));
+plotFunc = @(~) (0); % Define dummy function that does nothing
+
+[xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, false, plotFunc);
+
+[xfpr, Pfpr] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, true, plotFunc);
+
+
+figure;
+grid on;
+plot(X(1,:), 'r');
 hold on;
-plot(X(1,1), X(2,1), 'ro', 'MarkerSize', 10);
-plot(Xf(1,1), Xf(2,1), 'co', 'MarkerSize', 10);
-plot(xfp(1,1), xfp(2,1), 'ro', 'MarkerSize', 10);
+errorbar(Xf(1,:),Pf(1,:), 'k', 'LineWidth', 1.5);
+errorbar(xfp(1,:),Pfp(1,:), 'b', 'LineWidth', 1.5);
+errorbar(xfpr(1,:),Pfpr(1,:), 'm--', 'LineWidth', 1.5);
+plot(Y(1,:), 'x', 'Color', [.4 .4 .4], 'MarkerSize', 10);
 hold off;
-legend('True state', 'KF', 'PF');
+xlabel('k');
+ylabel('x');
+legend('True state', 'KF', 'PF', 'PF with resampling', 'Measurements');
 
+print('Images/2_b_incorrect_prior.eps', '-depsc');
 
+% Correct prior
+x_0 = 2;
+P_0 = 8;
 
+%% c) Illustrate the particle trajectories for a PF without resampling
 
+N = 100;
+plotFunc = @plotPartTrajs;
+[xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, false, plotFunc);
+
+figure;
+grid on;
+plot(X(1,:), 'r');
+hold on;
+errorbar(Xf(1,:),Pf(1,:), 'k', 'LineWidth', 1.5);
+errorbar(xfp(1,:),Pfp(1,:), 'b', 'LineWidth', 1.5);
+errorbar(xfpr(1,:),Pfpr(1,:), 'm--', 'LineWidth', 1.5);
+plot(Y(1,:), 'x', 'Color', [.4 .4 .4], 'MarkerSize', 10);
+hold off;
+xlabel('k');
+ylabel('x');
+legend('True state', 'KF', 'PF', 'PF with resampling', 'Measurements');
+
+print('Images/2_c_plotPartTrajs.eps', '-depsc');
+
+%% d) Illustrate the particle trajectories for a PF with resampling
+
+N = 100;
+plotFunc = @plotPartTrajs;
+[xfp, Pfp] = pfFilter(x_0, P_0, Y, proc_f, Q, meas_h, R, N, true, plotFunc);
+
+figure;
+grid on;
+plot(X(1,:), 'r');
+hold on;
+errorbar(Xf(1,:),Pf(1,:), 'k', 'LineWidth', 1.5);
+errorbar(xfp(1,:),Pfp(1,:), 'b', 'LineWidth', 1.5);
+errorbar(xfpr(1,:),Pfpr(1,:), 'm--', 'LineWidth', 1.5);
+plot(Y(1,:), 'x', 'Color', [.4 .4 .4], 'MarkerSize', 10);
+hold off;
+xlabel('k');
+ylabel('x');
+legend('True state', 'KF', 'PF', 'PF with resampling', 'Measurements');
+
+print('Images/2_d_plotPartTrajs_resampling.eps', '-depsc');
 
 end % scenario2
 
+if scenario3
+%% a) True state
+% MapProblemGetPoint
+%% b)
+load Xk;
+
+% Compute velocity from positions
+V = zeros(2, size(Xk,2));
+for i=2:size(Xk,2)
+    V(:,i) = Xk(1:2,i) - Xk(1:2,i-1);
+end
+
+% Velocity measurements
+sigma_v = 0.1;
+Y = V + mvnrnd([0 0], sigma_v*eye(2), size(V,2))';
+figure;
+plot(Y(1,:), Y(2,:), '.', 'Color', [.4 .4 .4], 'MarkerSize', 10);
+xlabel('x');
+ylabel('y');
+print('Images/2_b_velocity_measurements.eps', '-depsc');
+
+%% d)
+% Constant velocity motion model
+T = 0.1;
+f = @(x, T) [x(1) + T*x(3); x(2) + T*x(4); x(3); x(4)];
+Q = diag([0.1 0.1 0.01 0.01].^2);
+
+% Measurement model
+H = [1 0 0 0; 0 1 0 0];
+h = @(x) H*x;
+R = diag([0.1 0.1].^2);
+
+% Prior
+x_0 = xk(:,1);
+P_0 = zeros(4);
+
+end % scenario3
 
 %% Export the source code as .txt file.
 filename = fullfile('main.m');
 copyfile(filename,'main.txt','f');
+
